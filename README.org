@@ -1,0 +1,2 @@
+* SOUPCANS
+Repository for me to store graphical programs which leverage HOTSOUP.
