@@ -19,6 +19,14 @@
 #include "../include/glDebug.hpp"
 #include "../include/glHelpers.hpp"
 
+void nanoDelay(unsigned int nanoseconds) {
+	timespec frame_delay = { 0,          /* seconds */
+							 nanoseconds /* nanoseconds */ };
+	timespec remaining = { 0, 0 };
+
+	nanosleep(&frame_delay, &remaining);
+}
+
 // structs defined in glhelpers.hpp for convient grouping of things
 using glhelpers::displayObjects;
 using glhelpers::shaderSrc;
@@ -103,7 +111,7 @@ int main() {
     }
 
     /* Window hints */
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
@@ -111,7 +119,7 @@ int main() {
 
     /* Video mode, window, display */
     std::unique_ptr<displayObjects> display_objects = glhelpers::getDisplayObjects();
-    GLFWwindow* window = glhelpers::glfwCreatePrimaryWindow(
+    GLFWwindow* window = glfwCreateWindow(
         display_objects->vidmode->width/2, display_objects->vidmode->height/2,
         "OpenGL program that hasn't rendered anything yet",
         NULL, NULL
@@ -122,6 +130,8 @@ int main() {
         return 1;
     }
     glfwMakeContextCurrent(window);
+	// disable vsync to test our 60fps cap
+	glfwSwapInterval(1);
 
     /* Initialize extension wrangler library */
     if (gl3wInit()) {
@@ -163,7 +173,7 @@ int main() {
           0.0f,  0.0f,  1.0f, 0.0f,
           0.0f,  0.0f,  0.0f, 1.0f
     };
-    float* obj_x = &model[3][0];
+    //float* obj_x = &model[3][0];
     float* obj_y = &model[3][1];
 
     float color_vectors[] = {
@@ -331,6 +341,8 @@ int main() {
 
     glhelpers::SimpleTimer timer = glhelpers::SimpleTimer();
 
+	const unsigned int FRAME_DELAY_60FPS_CAP = 16500000;
+
     /* Render loop */
     while (!glfwWindowShouldClose(window)) {
         glhelpers::update_fps_counter(window);
@@ -338,7 +350,7 @@ int main() {
         
         squish_matrix(squish, model[3][1], 0.15f, -0.6f);
         glUniformMatrix4fv(model_location, 1, GL_FALSE, glm::value_ptr(model));
-        glm::mat4 rotation_matrix = (
+        rotation_matrix = (
             glhelpers::rot3d_matrix(theta, 'x') * glhelpers::rot3d_matrix(theta, 'y')
         );
         glUniformMatrix4fv(rot_location, 1, GL_FALSE, 
@@ -349,9 +361,10 @@ int main() {
         );
 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glViewport(0, 0, 
-                glhelpers::get_glfw_primary_window_width(), 
-                glhelpers::get_glfw_primary_window_height());
+
+		int width, height;
+		glfwGetFramebufferSize(window, &width, &height);
+        glViewport(0, 0, width, height);
 
         /* Draw objects here */
         glDrawElements(GL_TRIANGLES, n_elements, GL_UNSIGNED_INT, nullptr);
@@ -370,6 +383,9 @@ int main() {
         bucephalus.recordPosition();
         theta = (theta < 360) ? theta + rotational_velocity : 
                                 theta + rotational_velocity - 360;
+
+		// cap our program to 60fps with a delay before next frame
+		nanoDelay(FRAME_DELAY_60FPS_CAP);
     }
 
     glfwTerminate();
