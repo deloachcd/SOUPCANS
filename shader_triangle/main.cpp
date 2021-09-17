@@ -16,10 +16,58 @@
 
 #define SOUP_GL_DEBUG_CONTEXT
 
+#ifdef SOUP_GL_DEBUG_CONTEXT
+/* TODO
+#ifdef __unix__
+#include <sys/inotify.h>
+#endif
+*/
+#endif
+
 using namespace souputils::gldebug;
 using namespace souputils::glhelpers;
 using namespace souputils::glfwhelpers;
 using namespace souputils::convenience;
+
+GLuint compileSimpleShaderProgram(const char* vertex_shader_fname,
+								  const char* fragment_shader_fname) {
+	/* I can generalize this logic later if I need to link more
+	   than a single vertex/fragment shader, probably with a
+	   va_list
+	*/
+    std::unique_ptr<shaderSrc> vertex_src, fragment_src;
+    vertex_src = loadShaderFile(
+        GL_VERTEX_SHADER, vertex_shader_fname
+    );
+    fragment_src = loadShaderFile(
+        GL_FRAGMENT_SHADER, fragment_shader_fname
+    );
+    GLuint vs = compileShaderSrc(vertex_src.get());
+    GLuint fs = compileShaderSrc(fragment_src.get());
+
+    GLuint new_shader_prog = glCreateProgram();
+    glAttachShader(new_shader_prog, vs);
+    glAttachShader(new_shader_prog, fs);
+    glLinkProgramSafe(new_shader_prog);
+
+	return new_shader_prog;
+}
+
+void reloadShaderProgramFromFiles(GLuint* program,
+								  const char* vertex_shader_fname,
+								  const char* fragment_shader_fname) {
+    std::unique_ptr<shaderSrc> vertex_src, fragment_src;
+	GLuint old_program;
+	GLuint new_program = compileSimpleShaderProgram(
+		vertex_shader_fname,
+		fragment_shader_fname
+		);
+	if (new_program) {
+		old_program = *program;
+		*program = new_program;
+		glDeleteProgram(old_program);
+	}
+}
 
 int main() {
     if (!glfwInit()) {
@@ -87,20 +135,26 @@ int main() {
 
     glEnableVertexAttribArray(0);
 
-    std::unique_ptr<shaderSrc> vertex_src, fragment_src;
-    vertex_src = loadShaderFile(
-        GL_VERTEX_SHADER, "res/shaders/vertex.glsl"
-    );
-    fragment_src = loadShaderFile(
-        GL_FRAGMENT_SHADER, "res/shaders/fragment.glsl"
-    );
-    GLuint vs = compileShaderSrc(vertex_src.get());
-    GLuint fs = compileShaderSrc(fragment_src.get());
+	const char* vertf = "res/shaders/vertex.glsl";
+	const char* fragf = "res/shaders/fragment.glsl";
+	GLuint shader_prog = compileSimpleShaderProgram(vertf, fragf);
 
-    GLuint shader_prog = glCreateProgram();
-    glAttachShader(shader_prog, vs);
-    glAttachShader(shader_prog, fs);
-    glLinkProgramSafe(shader_prog);
+/*
+  TODO: implement live reloading with inotify
+#ifdef SOUP_GL_DEBUG_CONTEXT
+#ifdef __unix__
+	int vertf_channel = inotify_init();
+	int fragf_channel = inotify_init();
+	if (vertf_channel < 0 || fragf_channel < 0) {
+		perror("inotify_init");
+	}
+	int vertf_watcher = inotify_add_watch(vertf_channel, vertf,
+										  IN_MODIFY | IN_DELETE);
+	int fragf_watcher = inotify_add_watch(fragf_channel, fragf,
+										  IN_MODIFY | IN_DELETE);
+#endif
+#endif
+*/
 
     int matrix_location = glGetUniformLocation(shader_prog, "matrix");
     glUseProgram(shader_prog);
@@ -119,59 +173,38 @@ int main() {
 
 	std::unique_ptr<fpsCounter> fcounter(new fpsCounter);
 
-	int cvector_location = glGetUniformLocation(shader_prog, "cvector");
-	glm::vec3 color_iterator;
 	const int N_COLOR_SHIFT_FRAMES = 25;
 	const float DELTA = 1.0f / static_cast<float>(N_COLOR_SHIFT_FRAMES);
-	float r = 1.0f;
-	float g = 1.0f;
-	float b = 1.0f;
 
-	enum FRAME_COLOR {RED, GREEN, BLUE};
 	enum FRAME_OPERATION {INC, DEC};
-	FRAME_COLOR fcolor = RED;
-	FRAME_OPERATION r_op = DEC;
-	FRAME_OPERATION g_op = DEC;
-	FRAME_OPERATION b_op = DEC;
-
+	int intensity_location = glGetUniformLocation(shader_prog, "intensity");
+	FRAME_OPERATION i_op = INC;
+	float intensity = 0.0f;
     while (!glfwWindowShouldClose(window)) {
-		switch (fcolor) {
-		case RED:
-			if (r < 0.0f || r > 1.0f) {
-				r_op = (r_op == INC) ? DEC : INC;
-			}
-			r = (r_op == INC) ? r + DELTA : r - DELTA;
-			fcolor = GREEN;
-			break;
-		case GREEN:
-			if (g < 0.0f || g > 1.0f) {
-				g_op = (g_op == INC) ? DEC : INC;
-			}
-			g = (g_op == INC) ? g + DELTA : g - DELTA;
-			fcolor = BLUE;
-			break;
-		case BLUE:
-			if (b < 0.0f || b > 1.0f) {
-				b_op = (b_op == INC) ? DEC : INC;
-			}
-			b = (b_op == INC) ? b + DELTA : b - DELTA;
-			fcolor = RED;
-			break;
+		if (intensity < 0.0f || intensity > 1.0f) {
+			i_op = (i_op == INC) ? DEC : INC;
 		}
-		//printf("%f %f %f\n", r, g, b);
+		intensity = (i_op == INC) ? intensity + DELTA : intensity - DELTA;
 
-		color_iterator = glm::vec3{r, g, b};
-		glUniform3fv(cvector_location, 1,
-						glm::value_ptr(color_iterator));
 		updateFPSCounter(window, fcounter.get());
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		glUseProgram(shader_prog);
+		glUniform1f(intensity_location, intensity);
 		glBindVertexArray(vao);
 		glDrawArrays(GL_TRIANGLES, 0, 3);
 		glfwPollEvents();
 		glfwSwapBuffers(window);
 
+		if (GLFW_PRESS == glfwGetKey(window, GLFW_KEY_R)) {
+			reloadShaderProgramFromFiles(&shader_prog, vertf, fragf);
+			glUseProgram(shader_prog);
+			intensity_location = glGetUniformLocation(shader_prog, "intensity");
+			glUniform1f(intensity_location, intensity);
+			matrix_location = glGetUniformLocation(shader_prog, "matrix");
+			glUniformMatrix4fv(matrix_location, 1, GL_FALSE,
+							   glm::value_ptr(widescreen_matrix));
+		}
 		if (GLFW_PRESS == glfwGetKey(window, GLFW_KEY_ESCAPE)) {
 			glfwSetWindowShouldClose(window, 1);
 			return 0;
