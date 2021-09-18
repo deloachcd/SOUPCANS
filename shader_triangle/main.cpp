@@ -173,7 +173,7 @@ int main() {
 
 	std::unique_ptr<fpsCounter> fcounter(new fpsCounter);
 
-	const int N_COLOR_SHIFT_FRAMES = 25;
+	const int N_COLOR_SHIFT_FRAMES = 5000;
 	const float DELTA = 1.0f / static_cast<float>(N_COLOR_SHIFT_FRAMES);
 
 	enum FRAME_OPERATION {INC, DEC};
