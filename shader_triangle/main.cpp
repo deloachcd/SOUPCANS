@@ -8,11 +8,14 @@
 #include <glm/vec3.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <stb/stb_image.h>
 
 #include "../include/souputils/glDebug.hpp"
 #include "../include/souputils/glHelpers.hpp"
 #include "../include/souputils/glfwHelpers.hpp"
 #include "../include/souputils/convenience.hpp"
+
+//#include "../include/stb/stb_image.hpp"
 
 #define SOUP_GL_DEBUG_CONTEXT
 
@@ -119,7 +122,26 @@ int main() {
         glm::vec3(-0.5f, -0.5f,  0.0f)
     };
 
-	std::unique_ptr<float[]> points = flatten(triangle_vectors, sizeof(triangle_vectors));
+	std::unique_ptr<float[]> points = flatten(triangle_vectors,
+											  sizeof(triangle_vectors));
+
+    int width, height, nrChannels;
+	stbi_set_flip_vertically_on_load(true);
+    unsigned char* texture_img_data = stbi_load("res/img/cloud_texture_crop.jpg", &width,
+												&height, &nrChannels, 0);
+    unsigned int texture;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    if (texture_img_data) {
+		// NOTE: this will just segfault if image dimensions aren't to spec!
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height,
+					 0, GL_RGB, GL_UNSIGNED_BYTE, texture_img_data);
+        //glGenerateMipmap(GL_TEXTURE_2D);
+		printf("%d %d\n", width, height);
+    } else {
+        printf("Failed to load image!\n");
+    }
+    stbi_image_free(texture_img_data);
 
 	GLuint vbo;
 	glGenBuffers(1, &vbo);
