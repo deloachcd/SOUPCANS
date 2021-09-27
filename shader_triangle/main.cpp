@@ -5,7 +5,7 @@
 
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
-#include <glm/vec3.hpp>
+#include <glm/vec2.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <stb/stb_image.h>
@@ -35,8 +35,7 @@ using namespace souputils::convenience;
 GLuint compileSimpleShaderProgram(const char* vertex_shader_fname,
 								  const char* fragment_shader_fname) {
 	/* I can generalize this logic later if I need to link more
-	   than a single vertex/fragment shader, probably with a
-	   va_list
+	   than a single vertex/fragment shader
 	*/
     std::unique_ptr<shaderSrc> vertex_src, fragment_src;
     vertex_src = loadShaderFile(
@@ -59,7 +58,7 @@ GLuint compileSimpleShaderProgram(const char* vertex_shader_fname,
 void reloadShaderProgramFromFiles(GLuint* program,
 								  const char* vertex_shader_fname,
 								  const char* fragment_shader_fname) {
-    std::unique_ptr<shaderSrc> vertex_src, fragment_src;
+    //std::unique_ptr<shaderSrc> vertex_src, fragment_src;
 	GLuint old_program;
 	GLuint new_program = compileSimpleShaderProgram(
 		vertex_shader_fname,
@@ -70,6 +69,24 @@ void reloadShaderProgramFromFiles(GLuint* program,
 		*program = new_program;
 		glDeleteProgram(old_program);
 	}
+}
+
+template <class T>
+inline GLuint vboFromFlattenedArray(T* arr, size_t size_arr) {
+	GLsizeiptr size_arr_cast = static_cast<GLsizeiptr>(size_arr);
+
+	GLint current_array_buffer; // = glGetIntegerv(GL_ARRAY_BUFFER);
+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &current_array_buffer);
+
+	std::unique_ptr<float[]> arr_flatten = flatten(arr, size_arr);
+
+	GLuint new_vbo;
+	glGenBuffers(1, &new_vbo);
+	glBindBuffer(GL_ARRAY_BUFFER, new_vbo);
+	glBufferData(GL_ARRAY_BUFFER, size_arr_cast, arr_flatten.get(), GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(current_array_buffer));
+	return new_vbo;
 }
 
 int main() {
@@ -116,19 +133,10 @@ int main() {
     glDepthFunc(GL_LESS);
 
 	// the main logic
-    glm::vec3 triangle_vectors[] = {
-        glm::vec3( 0.0f,  0.5f,  0.0f),
-        glm::vec3( 0.5f, -0.5f,  0.0f),
-        glm::vec3(-0.5f, -0.5f,  0.0f)
-    };
-
-	std::unique_ptr<float[]> points = flatten(triangle_vectors,
-											  sizeof(triangle_vectors));
-
     int width, height, nrChannels;
 	stbi_set_flip_vertically_on_load(true);
-    unsigned char* texture_img_data = stbi_load("res/img/cloud_texture_crop.jpg", &width,
-												&height, &nrChannels, 0);
+    unsigned char* texture_img_data = stbi_load("res/img/cloud_texture_crop.jpg",
+												&width, &height, &nrChannels, 0);
     unsigned int texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
@@ -137,25 +145,42 @@ int main() {
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height,
 					 0, GL_RGB, GL_UNSIGNED_BYTE, texture_img_data);
         //glGenerateMipmap(GL_TEXTURE_2D);
-		printf("%d %d\n", width, height);
+		glLogInfo("%d %d\n", width, height);
     } else {
         printf("Failed to load image!\n");
     }
     stbi_image_free(texture_img_data);
 
-	GLuint vbo;
-	glGenBuffers(1, &vbo);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(triangle_vectors),
-				 points.get(), GL_STATIC_DRAW);
+	glm::vec2 skybox_positions[] = {
+		glm::vec2( 0.5f,  0.5f),  // top right
+		glm::vec2( 0.5f, -0.5f),  // bottom right
+		glm::vec2(-0.5f, -0.5f),  // bottom left
+		glm::vec2(-0.5f,  0.5f)   // top left 
+	};
+	GLuint skybox_vbo = vboFromFlattenedArray<glm::vec2>(skybox_positions,
+														 sizeof(skybox_positions));
+
+    glm::vec2 triangle_positions[] = {
+        glm::vec2( 0.0f,  0.5f),
+        glm::vec2( 0.5f, -0.5f),
+        glm::vec2(-0.5f, -0.5f)
+    };
+	GLuint triangle_vbo = vboFromFlattenedArray<glm::vec2>(triangle_positions,
+														   sizeof(triangle_positions));
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
 	glBindVertexArray(vao);
-	glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 
+	// triangle @ location = 0
+	glBindBuffer(GL_ARRAY_BUFFER, triangle_vbo);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
     glEnableVertexAttribArray(0);
+
+	// triangle @ location = 0
+	glBindBuffer(GL_ARRAY_BUFFER, skybox_vbo);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+    glEnableVertexAttribArray(1);
 
 	const char* vertf = "res/shaders/vertex.glsl";
 	const char* fragf = "res/shaders/fragment.glsl";
