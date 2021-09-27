@@ -6,6 +6,7 @@
 #include <GL/gl3w.h>
 #include <GLFW/glfw3.h>
 #include <glm/vec2.hpp>
+#include <glm/vec4.hpp>
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <stb/stb_image.h>
@@ -72,13 +73,13 @@ void reloadShaderProgramFromFiles(GLuint* program,
 }
 
 template <class T>
-inline GLuint vboFromFlattenedArray(T* arr, size_t size_arr) {
+inline GLuint vboFromFlattenedVectorArray(T* vector_arr, size_t size_arr) {
 	GLsizeiptr size_arr_cast = static_cast<GLsizeiptr>(size_arr);
 
-	GLint current_array_buffer; // = glGetIntegerv(GL_ARRAY_BUFFER);
+	GLint current_array_buffer;
 	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &current_array_buffer);
 
-	std::unique_ptr<float[]> arr_flatten = flatten(arr, size_arr);
+	std::unique_ptr<float[]> arr_flatten = flatten(vector_arr, size_arr);
 
 	GLuint new_vbo;
 	glGenBuffers(1, &new_vbo);
@@ -135,38 +136,49 @@ int main() {
 	// the main logic
     int width, height, nrChannels;
 	stbi_set_flip_vertically_on_load(true);
-    unsigned char* texture_img_data = stbi_load("res/img/cloud_texture_crop.jpg",
+    unsigned char* texture_img_data = stbi_load("res/img/cloud_texture.jpg",
 												&width, &height, &nrChannels, 0);
-    unsigned int texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
+    unsigned int skybox_texture;
+    glGenTextures(1, &skybox_texture);
+    glBindTexture(GL_TEXTURE_2D, skybox_texture);
     if (texture_img_data) {
 		// NOTE: this will just segfault if image dimensions aren't to spec!
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height,
 					 0, GL_RGB, GL_UNSIGNED_BYTE, texture_img_data);
-        //glGenerateMipmap(GL_TEXTURE_2D);
 		glLogInfo("%d %d\n", width, height);
+        glGenerateMipmap(GL_TEXTURE_2D);
     } else {
         printf("Failed to load image!\n");
     }
     stbi_image_free(texture_img_data);
 
-	glm::vec2 skybox_positions[] = {
-		glm::vec2( 0.5f,  0.5f),  // top right
-		glm::vec2( 0.5f, -0.5f),  // bottom right
-		glm::vec2(-0.5f, -0.5f),  // bottom left
-		glm::vec2(-0.5f,  0.5f)   // top left 
+	glm::vec4 skybox_vertices[] = {
+		glm::vec4( 1.0f,  1.0f, 1.0f, 1.0f),  // top right
+		glm::vec4( 1.0f, -1.0f, 1.0f, 0.0f),  // bottom right
+		glm::vec4(-1.0f, -1.0f, 0.0f, 0.0f),  // bottom left
+		glm::vec4(-1.0f,  1.0f, 0.0f, 1.0f)   // top left 
 	};
-	GLuint skybox_vbo = vboFromFlattenedArray<glm::vec2>(skybox_positions,
-														 sizeof(skybox_positions));
+	GLuint skybox_vbo = vboFromFlattenedVectorArray<glm::vec4>(
+		skybox_vertices, sizeof(skybox_vertices)
+		);
+	GLuint skybox_indices[] = {
+		0, 1, 3,
+		1, 2, 3
+	};
+	GLuint skybox_element_ebo;
+	glGenBuffers(1, &skybox_element_ebo);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, skybox_element_ebo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(skybox_indices),
+				 skybox_indices, GL_STATIC_DRAW);
 
     glm::vec2 triangle_positions[] = {
         glm::vec2( 0.0f,  0.5f),
         glm::vec2( 0.5f, -0.5f),
         glm::vec2(-0.5f, -0.5f)
     };
-	GLuint triangle_vbo = vboFromFlattenedArray<glm::vec2>(triangle_positions,
-														   sizeof(triangle_positions));
+	GLuint triangle_vbo = vboFromFlattenedVectorArray<glm::vec2>(
+		triangle_positions, sizeof(triangle_positions)
+		);
 
 	GLuint vao;
 	glGenVertexArrays(1, &vao);
@@ -177,10 +189,13 @@ int main() {
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, NULL);
     glEnableVertexAttribArray(0);
 
-	// triangle @ location = 0
+	// skybox vposition @ location = 1, texture sample coord @ location = 2
 	glBindBuffer(GL_ARRAY_BUFFER, skybox_vbo);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
     glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
+						  (void*)(2 * sizeof(float)));
+    glEnableVertexAttribArray(2);
 
 	const char* vertf = "res/shaders/vertex.glsl";
 	const char* fragf = "res/shaders/fragment.glsl";
@@ -227,6 +242,11 @@ int main() {
 	int intensity_location = glGetUniformLocation(shader_prog, "intensity");
 	FRAME_OPERATION i_op = INC;
 	float intensity = 0.0f;
+
+	enum RENDER_TARGET {TRIANGLE = 1, CLOUD = 2};
+	int render_target_location = glGetUniformLocation(shader_prog, "render_target");
+
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, skybox_element_ebo);
     while (!glfwWindowShouldClose(window)) {
 		if (intensity < 0.0f || intensity > 1.0f) {
 			i_op = (i_op == INC) ? DEC : INC;
@@ -237,9 +257,20 @@ int main() {
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 		glUseProgram(shader_prog);
-		glUniform1f(intensity_location, intensity);
+
+		// draw skybox
 		glBindVertexArray(vao);
-		glDrawArrays(GL_TRIANGLES, 0, 3);
+		glBindTexture(GL_TEXTURE_2D, skybox_texture);
+		glUniform1i(render_target_location, CLOUD);
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+		// draw triangle
+		glBindVertexArray(vao);
+		glUniform1f(intensity_location, intensity);
+		glUniform1i(render_target_location, TRIANGLE);
+		//glDrawArrays(GL_TRIANGLES, 0, 3);
+		//glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, (void *)3);
+
 		glfwPollEvents();
 		glfwSwapBuffers(window);
 
@@ -257,4 +288,6 @@ int main() {
 			return 0;
 		}
     }
+	glfwTerminate();
+	return 0;
 }
