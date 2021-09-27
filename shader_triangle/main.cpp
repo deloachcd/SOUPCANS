@@ -152,11 +152,12 @@ int main() {
     }
     stbi_image_free(texture_img_data);
 
+	const float s_size = 0.206777f;  // length of "sampling square"
 	glm::vec4 skybox_vertices[] = {
-		glm::vec4( 1.0f,  1.0f, 1.0f, 1.0f),  // top right
-		glm::vec4( 1.0f, -1.0f, 1.0f, 0.0f),  // bottom right
-		glm::vec4(-1.0f, -1.0f, 0.0f, 0.0f),  // bottom left
-		glm::vec4(-1.0f,  1.0f, 0.0f, 1.0f)   // top left 
+		glm::vec4( 1.0f,  1.0f, s_size,          1.0f),  // top right
+		glm::vec4( 1.0f, -1.0f, s_size, 1.0f - s_size),  // bottom right
+		glm::vec4(-1.0f, -1.0f,   0.0f, 1.0f - s_size),  // bottom left
+		glm::vec4(-1.0f,  1.0f,   0.0f,          1.0f)   // top left 
 	};
 	GLuint skybox_vbo = vboFromFlattenedVectorArray<glm::vec4>(
 		skybox_vertices, sizeof(skybox_vertices)
@@ -236,12 +237,17 @@ int main() {
 	std::unique_ptr<fpsCounter> fcounter(new fpsCounter);
 
 	const int N_COLOR_SHIFT_FRAMES = 7500;
-	const float DELTA = 1.0f / static_cast<float>(N_COLOR_SHIFT_FRAMES);
+	const int N_SCROLL_SKY_FRAMES = 1000;
+	const float COLOR_DELTA = 1.0f / static_cast<float>(N_COLOR_SHIFT_FRAMES);
+	const float HORIZONTAL_SHIFT_DELTA = 1.0f / static_cast<float>(N_SCROLL_SKY_FRAMES);
 
 	enum FRAME_OPERATION {INC, DEC};
 	int intensity_location = glGetUniformLocation(shader_prog, "intensity");
 	FRAME_OPERATION i_op = INC;
 	float intensity = 0.0f;
+
+	int horizontal_shift_location = glGetUniformLocation(shader_prog, "horizontal_shift");
+	float horizontal_shift = 0.0f;
 
 	enum RENDER_TARGET {TRIANGLE = 1, CLOUD = 2};
 	int render_target_location = glGetUniformLocation(shader_prog, "render_target");
@@ -251,7 +257,11 @@ int main() {
 		if (intensity < 0.0f || intensity > 1.0f) {
 			i_op = (i_op == INC) ? DEC : INC;
 		}
-		intensity = (i_op == INC) ? intensity + DELTA : intensity - DELTA;
+		intensity = (i_op == INC) ? intensity + COLOR_DELTA : intensity - COLOR_DELTA;
+		horizontal_shift = (horizontal_shift + s_size >= 1.0f) ?
+			horizontal_shift - 1.0f + HORIZONTAL_SHIFT_DELTA :
+			horizontal_shift + HORIZONTAL_SHIFT_DELTA;
+		printf("%.5f\n", horizontal_shift + s_size);
 
 		updateFPSCounter(window, fcounter.get());
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -262,14 +272,9 @@ int main() {
 		glBindVertexArray(vao);
 		glBindTexture(GL_TEXTURE_2D, skybox_texture);
 		glUniform1i(render_target_location, CLOUD);
-		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-
-		// draw triangle
-		glBindVertexArray(vao);
 		glUniform1f(intensity_location, intensity);
-		glUniform1i(render_target_location, TRIANGLE);
-		//glDrawArrays(GL_TRIANGLES, 0, 3);
-		//glDrawElements(GL_TRIANGLES, 3, GL_UNSIGNED_INT, (void *)3);
+		glUniform1f(horizontal_shift_location, intensity);
+		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
 		glfwPollEvents();
 		glfwSwapBuffers(window);

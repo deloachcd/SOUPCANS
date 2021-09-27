@@ -1,6 +1,7 @@
 #version 330 core
 
 in float theta;
+in float hshift;
 in vec2 vertex_position;
 in vec2 tex_coord;
 out vec4 frag_color;
@@ -34,7 +35,6 @@ vec3 compute_position_rgb(vec2 vposition) {
 }
 
 bool position_in_triangle(vec2 vposition) {
-
 	if (vposition.y < -TRIANGLE_MAGNITUDE) {
 		return false;
 	} else if (vposition.x > 0) {
@@ -46,10 +46,9 @@ bool position_in_triangle(vec2 vposition) {
 
 
 void main() {
-    //FragColor = color;
 	if (position_in_triangle(vertex_position)) {
 		frag_color = vec4(compute_position_rgb(vertex_position), 1.0f); 
 	} else {
-		frag_color = texture(sky_texture, tex_coord);
+		frag_color = texture(sky_texture, vec2(tex_coord.x + hshift, tex_coord.y));
 	}
 }
