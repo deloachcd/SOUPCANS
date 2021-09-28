@@ -136,7 +136,7 @@ int main() {
 	// the main logic
     int width, height, nrChannels;
 	stbi_set_flip_vertically_on_load(true);
-    unsigned char* texture_img_data = stbi_load("res/img/cloud_texture.jpg",
+    unsigned char* texture_img_data = stbi_load("res/img/cloud_texture_trans.jpg",
 												&width, &height, &nrChannels, 0);
     unsigned int skybox_texture;
     glGenTextures(1, &skybox_texture);
